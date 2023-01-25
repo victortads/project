@@ -1,0 +1,103 @@
+---
+title: "Projeto em R"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: scroll
+runtime: shiny    
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(ggplot2)
+library(plotly)
+library(tidyquant)
+library(rvest)
+library(dplyr)
+library(DT)
+
+site <- "https://www.tabelasdefrete.com.br/planilha/historico-da-variacao-de-precos/25"
+
+fii <- read_html(site) %>% 
+  html_table()
+
+table <- fii[[1]]
+
+table <- slice(table, -(1:3))
+
+tabela <- table %>%
+select(X1, X2, X4, X6) %>% 
+  mutate(
+    across(X2:X6, gsub, pattern = "\\.", replacement = ""),
+    across(X2:X6, gsub, pattern = ",", replacement = "."),
+    across(X2:X6, as.numeric)
+  )
+
+names(tabela)[1:4] <- c("Data", "Gasolina", "Etanol", "Diesel")
+
+tabela <- timetk::tk_make_timeseries(
+  start_date = "2001-07",
+  end_date = "2015-12",
+  by = "month"
+  ) %>%
+  sort(decreasing = TRUE) %>% 
+  as_tibble() %>% 
+  slice(-57) %>% 
+  rename(datas = value) %>% 
+  cbind(tabela)
+
+```
+
+Column {.sidebar}
+------------
+```{r}
+selectInput(
+  inputId = "preco",
+  label = "Escolha o preco: (São respectivamente gasolina, etanol e diesel)",
+  choices = c("Gasolina","Etanol","Diesel"),
+  selected = "Gasolina")
+```
+
+
+Row {data-width=500}
+-----------------------------------------------------------------------
+
+### Histograma com a concentração dos preços durante todo o período analisado
+
+```{r}
+renderPlot({
+ tabela %>%
+  ggplot() +
+  aes(x = !!sym(input$preco)) +
+  geom_histogram() +
+  theme(legend.position = "top") 
+})
+```
+
+Row {data-width=500}
+-----------------------------------------------------------------------
+
+### Gráfico 
+
+```{r}
+renderPlotly({
+ tabela %>%
+  ggplot() +
+  aes(x = datas, y = !!sym(input$preco), color = ) +
+  geom_line() +
+    labs(x = "Mês e ano", y = "Valor")+
+    ggtitle(label = input$preco) +
+  theme(panel.background =element_blank(),
+        plot.title = element_text(size=22)) 
+})
+```
+
+### Dados históricos dos preços
+
+```{r}
+renderDataTable({
+ tabela %>%
+    select(Data, Gasolina, Etanol, Diesel) %>%
+    group_by(Data)
+})
+```
